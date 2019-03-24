@@ -1,9 +1,6 @@
 package com.gamingforgood.discordbot
 
-import com.gamingforgood.discordbot.mic.AudioPlayer
 import com.gamingforgood.discordbot.mic.CircularBuffer
-import com.gamingforgood.discordbot.mic.CircularBuffer2
-import com.gamingforgood.discordbot.mic.MicRecord
 import net.dv8tion.jda.core.JDABuilder
 import net.dv8tion.jda.core.audio.AudioReceiveHandler
 import net.dv8tion.jda.core.audio.AudioSendHandler
@@ -13,7 +10,6 @@ import net.dv8tion.jda.core.events.ReadyEvent
 import net.dv8tion.jda.core.events.guild.voice.GuildVoiceJoinEvent
 import net.dv8tion.jda.core.events.message.MessageReceivedEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
-import javax.sound.sampled.*
 
 
 val discord = JDABuilder("NTUyNDk3MjI0Njk3OTA1MTg0.D3QuSw.LDA7IgupKRuYimrEA9h0sx6i9WQ")
@@ -53,9 +49,9 @@ class MyListener : ListenerAdapter() {
         val vchannel = testGuild!!.getVoiceChannelById(551446224000253973)
         val mgr = testGuild.audioManager
         // join test voice channel
-        mgr.openAudioConnection(vchannel)
-//        mgr.sendingHandler = SendMicrophone()
+        mgr.sendingHandler = SendMicrophone() // must be set to enable receiving audio
         mgr.setReceivingHandler(ReceiveAudio())
+        mgr.openAudioConnection(vchannel)
         log("onReady", "Receiving audio...")
     }
 
@@ -64,10 +60,19 @@ class MyListener : ListenerAdapter() {
 }
 
 class ReceiveAudio : AudioReceiveHandler {
-    private val buffer: CircularBuffer2 = CircularBuffer2.getBufferObject()
+    private val buffer: FromDiscordBuffer = FromDiscordBuffer.bufferObject
+
+    private var talkingDebug: String = ""
+        set(newValue) {
+            if (newValue != field) {
+                field = newValue
+//                log("talking", newValue)
+            }
+        }
 
     override fun handleCombinedAudio(combinedAudio: CombinedAudio) {
-        if (combinedAudio.users.size == 0) return // silence
+        talkingDebug = "${combinedAudio.users.map { user -> user.name }}"
+        if (combinedAudio.users.size == 0) return
         buffer.writeToBuffer(combinedAudio.getAudioData(1.0))
     }
 
@@ -87,7 +92,7 @@ class SendMicrophone : AudioSendHandler {
     }
 
     override fun canProvide(): Boolean {
-        return buffer.isDataReady
+        return false //buffer.isDataReady
     }
 
     override fun isOpus(): Boolean {

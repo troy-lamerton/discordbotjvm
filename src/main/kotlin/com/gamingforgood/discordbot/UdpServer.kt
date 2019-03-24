@@ -1,27 +1,32 @@
 package com.gamingforgood.discordbot
 
-import com.gamingforgood.discordbot.mic.CircularBuffer2
 import java.net.*
 
 class UdpListener(port: Int) : Thread() {
-    val server = DatagramSocket(port)
-    lateinit var clientIpAddress: InetAddress
-    var clientPort: Int = 0
-    lateinit var bufferFromDiscord: CircularBuffer2
+    private val server = DatagramSocket(port)
+    private lateinit var clientIpAddress: InetAddress
+    private var clientPort: Int = 0
+    private val bufferFromDiscord = FromDiscordBuffer.bufferObject
+
+    var running = true
 
     override fun run() {
         log("udp","Udp server begin - waiting for client")
 
         val receiveHelloData = ByteArray(128)
         val receiveHelloPacket = DatagramPacket(receiveHelloData, receiveHelloData.size)
-        while (true) {
+        while (running) {
             server.receive(receiveHelloPacket)
-            val sentence = String(receiveHelloPacket.data)
-            if (sentence == "hello") {
+            val sentence = String(receiveHelloPacket.data).trim()
+            if (sentence.startsWith("hello")) {
                 log("udp","Client connected")
                 break
+            } else {
+                log("udp","Client should send 'hello' first! not '$sentence'")
             }
         }
+        if (!running) return
+
         clientIpAddress = receiveHelloPacket.address
         clientPort = receiveHelloPacket.port
 
@@ -30,15 +35,18 @@ class UdpListener(port: Int) : Thread() {
         server.send(helloRespPacket)
 
         // send data continuously
-        var sendData: ByteArray
-        log("udp", "server is looping")
-        while (true) {
+        log("udp", "Sending all audio")
+        while (running) {
             // TODO
             if (bufferFromDiscord.isDataReady) {
                 val packet = createPacket(bufferFromDiscord.readDiscordAudio())
                 server.send(packet)
             }
         }
+    }
+
+    fun disconnect() {
+        running = false
     }
 
     private fun createPacket(data: ByteArray): DatagramPacket {
