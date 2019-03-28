@@ -3,25 +3,38 @@ package com.gamingforgood.discordbot
 import java.net.*
 
 class UdpListener(port: Int) : Thread() {
-    private val server = DatagramSocket(port)
-    private lateinit var clientIpAddress: InetAddress
-    private var clientPort: Int = 0
-    private val bufferFromDiscord = FromDiscordBuffer.bufferObject
-
+    val socket = DatagramSocket(port)
+    private var clientIpAddress: InetAddress? = null
+    private var clientPort: Int = -1
+//    private val bufferFromDiscord = FromDiscordBuffer.bufferObject
+    private val bufferToDiscord = ToDiscordBuffer.bufferObject
+    private var didWarn = false
     var running = true
+    val clientIsConnected
+        get() = clientIpAddress != null
+
+    fun sendToClient(data: ByteArray) {
+        if (!server.clientIsConnected) {
+//            log("warn", "No client is connected to udp server, dropping ${data.size} bytes")
+            return
+        }
+        val packet = CreatePacket(data)
+        socket.send(packet)
+    }
 
     override fun run() {
-        log("udp","Udp server begin - waiting for client")
+        log("udp","Udp socket begin - waiting for client")
 
         val receiveHelloData = ByteArray(128)
         val receiveHelloPacket = DatagramPacket(receiveHelloData, receiveHelloData.size)
         while (running) {
-            server.receive(receiveHelloPacket)
+            socket.receive(receiveHelloPacket)
             val sentence = String(receiveHelloPacket.data).trim()
             if (sentence.startsWith("hello")) {
                 log("udp","Client connected")
                 break
-            } else {
+            } else if (!didWarn) {
+                didWarn = true
                 log("udp","Client should send 'hello' first! not '$sentence'")
             }
         }
@@ -31,17 +44,15 @@ class UdpListener(port: Int) : Thread() {
         clientPort = receiveHelloPacket.port
 
         val helloResponse = "HELLO".toByteArray()
-        val helloRespPacket = createPacket(helloResponse)
-        server.send(helloRespPacket)
+        sendToClient(helloResponse)
 
         // send data continuously
-        log("udp", "Sending all audio")
+        log("udp", "Forwarding audio to discord")
+        val pcmSample = ByteArray(1920 * 2) // constant set in unity C# project
+        val pcmSamplePacket = DatagramPacket(pcmSample, pcmSample.size)
         while (running) {
-            // TODO
-            if (bufferFromDiscord.isDataReady) {
-                val packet = createPacket(bufferFromDiscord.readDiscordAudio())
-                server.send(packet)
-            }
+            socket.receive(pcmSamplePacket) // read bytes from unity into the packet
+            bufferToDiscord.writeToBuffer(pcmSamplePacket) // write bytes to buffer for JDA to collect
         }
     }
 
@@ -49,7 +60,7 @@ class UdpListener(port: Int) : Thread() {
         running = false
     }
 
-    private fun createPacket(data: ByteArray): DatagramPacket {
+    private fun CreatePacket(data: ByteArray): DatagramPacket {
         return DatagramPacket(data, data.size, clientIpAddress, clientPort)
     }
 }

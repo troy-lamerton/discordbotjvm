@@ -21,3 +21,4 @@ dependencies {
 compileKotlin {
     kotlinOptions.jvmTarget = "1.8"
 }
+mainClassName = 'com.gamingforgood.discordbot.MainKt'

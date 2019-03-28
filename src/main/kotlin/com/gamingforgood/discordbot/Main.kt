@@ -1,6 +1,5 @@
 package com.gamingforgood.discordbot
 
-import com.gamingforgood.discordbot.mic.CircularBuffer
 import net.dv8tion.jda.core.JDABuilder
 import net.dv8tion.jda.core.audio.AudioReceiveHandler
 import net.dv8tion.jda.core.audio.AudioSendHandler
@@ -10,6 +9,8 @@ import net.dv8tion.jda.core.events.ReadyEvent
 import net.dv8tion.jda.core.events.guild.voice.GuildVoiceJoinEvent
 import net.dv8tion.jda.core.events.message.MessageReceivedEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 
 val discord = JDABuilder("NTUyNDk3MjI0Njk3OTA1MTg0.D3QuSw.LDA7IgupKRuYimrEA9h0sx6i9WQ")
@@ -17,19 +18,13 @@ val discord = JDABuilder("NTUyNDk3MjI0Njk3OTA1MTg0.D3QuSw.LDA7IgupKRuYimrEA9h0sx
     .addEventListener()
     .build()!!
 
+val server = UdpListener(9050)
+
 fun main() {
     log("main", "start jda bot")
 
-    // start audio relay server
-    val server = UdpListener(9050)
+    // start audio relay socket
     server.start()
-
-    // start microphone
-//    val format = AudioFormat(48000f, 16, 2, true, true)
-
-//    val recorder = MicRecord(format, getMicrophoneLine(format)!!)
-//    recorder.start()
-//    recorder.join()
 }
 
 class MyListener : ListenerAdapter() {
@@ -48,32 +43,49 @@ class MyListener : ListenerAdapter() {
         val testGuild = discord.guilds.find { guild -> guild.name == "best_testing_server" }
         val vchannel = testGuild!!.getVoiceChannelById(551446224000253973)
         val mgr = testGuild.audioManager
-        // join test voice channel
-        mgr.sendingHandler = SendMicrophone() // must be set to enable receiving audio
-        mgr.setReceivingHandler(ReceiveAudio())
+
+        mgr.sendingHandler = SendRoomAudio() // must be set to enable receiving audio
+        mgr.setReceivingHandler(ReceiveDiscordAudio())
+
+        // join voice channel
         mgr.openAudioConnection(vchannel)
-        log("onReady", "Receiving audio...")
     }
 
     override fun onGuildVoiceJoin(event: GuildVoiceJoinEvent) {
     }
 }
 
-class ReceiveAudio : AudioReceiveHandler {
-    private val buffer: FromDiscordBuffer = FromDiscordBuffer.bufferObject
+class ReceiveDiscordAudio : AudioReceiveHandler {
 
-    private var talkingDebug: String = ""
-        set(newValue) {
-            if (newValue != field) {
-                field = newValue
-//                log("talking", newValue)
-            }
-        }
-
+    /**
+     * Mix discords stereo big endian audio to mono channel little endian
+     * And send it to the unity udp client
+     */
     override fun handleCombinedAudio(combinedAudio: CombinedAudio) {
-        talkingDebug = "${combinedAudio.users.map { user -> user.name }}"
         if (combinedAudio.users.size == 0) return
-        buffer.writeToBuffer(combinedAudio.getAudioData(1.0))
+        val discordData = combinedAudio.getAudioData(1.0)
+
+        // raw stereo data from discord, see this.INPUT_FORMAT
+        val stereoBuffer = ByteBuffer.allocate(discordData.size)
+        stereoBuffer.put(discordData)
+
+        // mono buffer in little endian - the resampler in C# needs little endian
+        val monoBufferLE = ByteBuffer.allocate(discordData.size / 2)
+        monoBufferLE.order(ByteOrder.LITTLE_ENDIAN)
+
+        for (i in 0 until discordData.size step 4) {
+            // combine stereo channels into one
+            val left = stereoBuffer.getShort(i)
+            val right = stereoBuffer.getShort(i + 2)
+            val mixed: Int = (left + right) / 2
+
+            monoBufferLE.putShort(i / 2, mixed.toShort())
+        }
+        val monoBytes = ByteArray(monoBufferLE.capacity())
+        monoBufferLE.get(monoBytes)
+
+        require(monoBytes.size == discordData.size / 2)
+        server.sendToClient(monoBytes)
     }
 
     override fun canReceiveCombined(): Boolean {
@@ -84,15 +96,15 @@ class ReceiveAudio : AudioReceiveHandler {
     override fun handleUserAudio(userAudio: UserAudio?) { }
 }
 
-class SendMicrophone : AudioSendHandler {
-    private val buffer: CircularBuffer = CircularBuffer.getBufferObject()
+class SendRoomAudio : AudioSendHandler {
+    private val buffer: ToDiscordBuffer = ToDiscordBuffer.bufferObject
 
     override fun provide20MsAudio(): ByteArray {
         return buffer.read20MsOfAudio()
     }
 
     override fun canProvide(): Boolean {
-        return false //buffer.isDataReady
+        return buffer.isDataReady
     }
 
     override fun isOpus(): Boolean {

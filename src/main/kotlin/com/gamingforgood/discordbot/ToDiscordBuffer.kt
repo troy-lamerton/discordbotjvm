@@ -1,12 +1,9 @@
 package com.gamingforgood.discordbot
 
+import java.net.DatagramPacket
 import java.util.concurrent.LinkedBlockingQueue
 
-/**
- * Discord bot writes data to this buffer
- * Udp socket reads it and forwards the data to unity dissonance
- */
-class FromDiscordBuffer {
+class ToDiscordBuffer private constructor() {
 
     private val QUEUE_CAPACITY = 30
     private val buffer = ByteArray(BUFFER_SIZE)
@@ -14,39 +11,42 @@ class FromDiscordBuffer {
     private var write_index: Int = 0
 
     val isDataReady: Boolean
-        get() = buffersQueue.size >= 1
+        get() = buffersQueue.size >= 2
 
-    @Synchronized
-    fun writeToBuffer(data: ByteArray) {
-        for (datum in data) {
+    internal fun writeToBuffer(packet: DatagramPacket) {
+        val data = packet.data
+        for (i in packet.offset until packet.length) {
             if (write_index >= BUFFER_SIZE) {
                 if (buffersQueue.size == QUEUE_CAPACITY) {
                     // drop the oldest buffer
+                    log("buffer", "dropped frame")
                     buffersQueue.remove()
                     // and also drop this one (don't add it)
                 }
                 buffersQueue.add(buffer.clone())
                 write_index = 0
             }
-            buffer[write_index] = datum
+            buffer[write_index] = data[i]
             write_index++
         }
     }
 
     @Synchronized
-    fun readDiscordAudio(): ByteArray {
+    fun read20MsOfAudio(): ByteArray {
         return buffersQueue.poll()
     }
 
     companion object {
 
-        internal val BUFFER_SIZE: Int = 3840 // 48000 * 16 * 2 / 8 / (1000/20)
-        private var buf: FromDiscordBuffer? = null
+        // number of bytes in 20ms of 48khz stereo audio
+        // as required by AudioSendHandler.INPUT_FORMAT
+        internal const val BUFFER_SIZE: Int = 3840 // 48000 * 16 bit-audio * 2 channels / 8 bits-in-a-byte / (1000 ms-in-a-second / 20 ms) = # of bytes in 20ms of audio
+        private var buf: ToDiscordBuffer? = null
 
-        val bufferObject: FromDiscordBuffer
+        val bufferObject: ToDiscordBuffer
             get() {
                 if (buf == null) {
-                    buf = FromDiscordBuffer()
+                    buf = ToDiscordBuffer()
                 }
                 return buf!!
             }
