@@ -23,11 +23,11 @@ class UdpListener(port: Int) : Thread() {
     }
 
     override fun run() {
-        log("udp","Udp socket begin - waiting for client")
 
         val receiveHelloData = ByteArray(128)
         val receiveHelloPacket = DatagramPacket(receiveHelloData, receiveHelloData.size)
         while (running) {
+            log("udp","Udp socket begin - waiting for client")
             socket.receive(receiveHelloPacket)
             val sentence = String(receiveHelloPacket.data).trim()
             if (sentence.startsWith("hello")) {

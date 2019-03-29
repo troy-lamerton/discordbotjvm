@@ -1,3 +1,5 @@
+import java.nio.file.Paths
+
 plugins {
     id 'java'
     id 'application'
@@ -22,3 +24,44 @@ compileKotlin {
     kotlinOptions.jvmTarget = "1.8"
 }
 mainClassName = 'com.gamingforgood.discordbot.MainKt'
+
+
+// clean
+task cleanDockerFolder(type: Delete) {
+  delete '../Docker/discordbot/bin', '../Docker/discordbot/lib'
+}
+
+// copy bot build into Docker build directory
+task copyBotBuild(type: Copy) {
+    from 'build/install/discordbot'
+    into '../Docker/discordbot'
+}
+
+copyBotBuild.dependsOn(installDist, cleanDockerFolder)
+
+// build unity windows standalone
+def unityPath = 'C:/Program Files/Unity/Hub/Editor/2018.3.0f2/Editor/Unity.exe'
+def unityProject = file('../Vivox Unity Project/samples/UnitySampleApp')
+
+
+task buildUnityVivox() {
+    println()
+    group 'best'
+    exec {
+        executable unityPath
+        args '-projectPath', unityProject, '-buildWindows64Player', 'Bin/Win64/relayVivox.exe'
+    }
+}
+
+// build Dockerfile in context of Docker directory
+task buildContainer() {
+    group 'best'
+    exec {
+        executable 'cmd'
+        args '/c "docker build -t win-nano-dbot:latest -f ../Docker/Dockerfile ../Docker"'
+// possibly will need to use windows server / windows 10
+// docker build -t oracle/serverjre:8-windowsservercore -f windowsservercore/Dockerfile .
+    }
+}
+
+buildContainer.dependsOn(copyBotBuild)
