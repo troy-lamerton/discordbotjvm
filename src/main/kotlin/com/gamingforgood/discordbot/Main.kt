@@ -11,6 +11,7 @@ import net.dv8tion.jda.core.events.message.MessageReceivedEvent
 import net.dv8tion.jda.core.hooks.ListenerAdapter
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.*
 
 
 val discord = JDABuilder("NTUyNDk3MjI0Njk3OTA1MTg0.D3QuSw.LDA7IgupKRuYimrEA9h0sx6i9WQ")
@@ -20,11 +21,32 @@ val discord = JDABuilder("NTUyNDk3MjI0Njk3OTA1MTg0.D3QuSw.LDA7IgupKRuYimrEA9h0sx
 
 val server = UdpListener(9050)
 
-fun main() {
-    log("main", "start jda bot")
+fun main(args: Array<String>) {
+    log("main", "DBot started with ${args.size} args: ${args.joinToString(", ")}")
+
+    if (args.isEmpty()) {
+        throw IllegalArgumentException("No program args! You must specify the pipe name like: java -jar dbot.jar pipe1")
+    }
+
+    listenOnPipe(args[0])
 
     // start audio relay socket
     server.start()
+}
+
+fun listenOnPipe(name: String) {
+    val pipe = PipeClient(name)
+    pipe.start()
+
+    val stdin = Scanner(System.`in`)
+    while(true) {
+        if (stdin.hasNext()) {
+            val line = stdin.nextLine()
+            if (line == "ping") {
+                pipe.ping()
+            }
+        }
+    }
 }
 
 class MyListener : ListenerAdapter() {

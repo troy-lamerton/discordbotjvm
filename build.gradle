@@ -49,7 +49,7 @@ task buildUnityVivox() {
     group 'best'
     exec {
         executable unityPath
-        args '-projectPath', unityProject, '-buildWindows64Player', 'Bin/Win64/relayVivox.exe'
+        args '-projectPath', unityProject, '-buildWindows64Player', 'Bin/Win64/relayVivox.exe', '-quit'
     }
 }
 
